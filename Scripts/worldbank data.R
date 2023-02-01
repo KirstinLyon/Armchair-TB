@@ -1,107 +1,56 @@
 library(tidyverse)
 library(wbstats) #World bank database
-library(httr)# needed for API
-library(jsonlite) #needed to read content from WHO
-library(WHO)
 
-# WorldBank Datasets ----
+## Global Variables ----
+SADC <- c("AGO", "NAM", "ZAF", "LSO", "SWZ", 
+                                 "BWA", "ZWE", "ZMB", "MOZ", "MWI", 
+                                 "MDG", "COM", "SYC", "MUS")
 
-#Pull down worldbank data 
+#Burundi, Democratic Republic of the Congo,Kenya,  Rwanda,  South Sudan,  Uganda, Tanzania
+EAC <- c("BDI", "KEN", "RWA", "SSD", "TZA", "UGA", "COD")
 
-all_indicators <- wbstats::wb_indicators()
-
-wbstats::
-
-
-all_sources <- all_indicators %>% 
-    distinct(source) #%>% 
-    #filter("Health Nutrition and Population Statistics")
-  
-Nutrition <- all_sources %>% 
-    filter(source == "Health Nutrition and Population Statistics")
-
-
-all_nutrition_indicators <- all_indicators %>% 
-    filter(source =="Health Nutrition and Population Statistics")
-
-
-write_csv(all_nutrition_indicators,"All WorldBank Nutrition Indicators.csv")
-write_csv(all_sources, "All WorldBank Sources.csv")
-write_csv(all_indicators, "All WorldBank Indicators.csv")
-
-
-#gives an idea of what is in the dataset
-fresh_cache <- wb_cache()
-fresh_indicators <- fresh_cache$indicators
-fresh_countries <- fresh_cache$countries
-
-?wb_cache
-?wb_data
-
-df <- get_data("WHOSIS_000001")
-
-country <- wb_countries()
-
-# WHO Datasets ----
-
-# https://www.dataquest.io/blog/r-api-tutorial/
-#https://www.who.int/data/gho/info/gho-odata-api
-#you want the status to be 200 - that means it has worked
-#Status codes: https://www.restapitutorial.com/httpstatuscodes.html
-#https://gateway.euro.who.int/en/api/specification/#nav-example-4
-#https://apps.who.int/gho/data/node.resources.api
-#https://apps.who.int/gho/athena/public_docs/examples.html
-#https://apps.who.int/gho/data/node.home
-#https://data.who.int/products/datadot
-#https://portal.who.int/triplebillions/PowerBIDashboards/ExploreIndicators
-
-res = GET("https://ghoapi.azureedge.net/api/Dimension")
-res
-
-rawToChar(res$content)
-data = fromJSON(rawToChar(res$content))
-data
-
-test = GET("https://ghoapi.azureedge.net/api")
-test
-
-test2 = GET("http://apps.who.int/gho/athena/api/GHO/WHOSIS_000001,WHOSIS_000015")
-test2
-data_test2 = fromJSON(rawToChar(test2$content))
-
-
-rawToChar(test$content)
-data_test = fromJSON(rawToChar(test$content))
-
-data_test
-
-class(data)
-
-
-list1 <- data
-
-
-df <- map_if(list1, is.data.frame, list) %>% as_tibble %>% unnest(cols = c(value))
-df # this is what we want!
-class(df)
-
-
-# move to a tibble
+ECOWAS  <- c("BEN", "BFA", "CPV", "CIV", "GMB", "GHA", "GIN", 
+            "GNB", "LBR", "MLI", "NER", "NGA", "SEN", "SLE", "TGO")
 
 
 
-who_indicators <- WHO::get_codes()
+
+ALL_REGIONS <- c(SADC, EAC, ECOWAS)
 
 
-countries <- GET("https://ghoapi.azureedge.net/api/DIMENSION/COUNTRY/DimensionValues")
-countries_list <- fromJSON(rawToChar(countries$content))
+START_YEAR = 2000
+END_YEAR = 2023
 
-countries_list
-
-
-TB <- GET("https://ghoapi.azureedge.net/api/Indicator?$filter=contains(IndicatorName,'Tuberculosis')")
-TB_LIST <- fromJSON(rawToChar(TB$content))
-TB_LIST
+INDICATORS <- c("SH.TBS.INCD", "SH.TBS.DTEC.ZS", "SH.TBS.MORT",
+                "SH.TBS.CURE.ZS", "SH.XPD.EHEX.CH.ZS", "SH.XPD.GHED.GE.ZS",
+                "SH.UHC.SRVS.CV.XD", "SP.DYN.LE00.FE.IN", "SP.DYN.LE00.MA.IN",
+                "HD.HCI.OVRL", "SH.IMM.IBCG")
 
 
+## Meta-data ----
+indicators_metadata <- wbstats::wb_indicators() %>% 
+    select(indicator_id, indicator, indicator_desc, source_org)
 
+## Extract data ----
+WB_data <- wbstats::wb_data(
+    indicator = INDICATORS,
+    country = ALL_REGIONS,
+    start_date = START_YEAR,
+    end_date = END_YEAR
+) %>% 
+    select(-iso2c) %>% 
+    rename(year = date) %>% 
+    mutate(region = case_when(iso3c %in% SADC ~ "SADC",
+                              iso3c %in% EAC ~ "EAC",
+                              iso3c %in% ECOWAS ~ "ECOWAS")) %>% 
+    select(iso3c, country, region, year, everything()) ##%>% 
+    ##write_excel_csv("WB_data.csv")
+
+# Convert to a long format
+WB_data_long <- WB_data %>% 
+    pivot_longer(!c(country, year, iso3c, region),
+                 names_to = "indicator_id",
+                 values_to = "value") %>% 
+    left_join(indicators_metadata, by = "indicator_id") %>% 
+    drop_na() %>% 
+    write_excel_csv("WB_data_long.csv")
